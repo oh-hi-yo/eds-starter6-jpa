@@ -2,45 +2,45 @@ package ch.rasc.eds.starter.e2e;
 
 import static io.restassured.RestAssured.given;
 
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
+
 
 import ch.rasc.eds.starter.AbstractIT;
-import ch.rasc.eds.starter.entity.QUser;
-import ch.rasc.eds.starter.util.JPAQueryFactory;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 
 class LockoutIT extends AbstractIT {
 
 	@Autowired
-	JPAQueryFactory jpaQueryFactory;
+	JdbcTemplate jdbcTemplate;
 
 	@BeforeEach
-	void setUp() {
+	void resetFailedLogins() {
 		RestAssured.port = this.port;
-		// Reset failed logins for user account before each test
-		this.jpaQueryFactory.update(QUser.user).set(QUser.user.failedLogins, 0)
-				.setNull(QUser.user.lockedOutUntil)
-				.where(QUser.user.loginName.eq("user")).execute();
+		this.jdbcTemplate.update(
+				"UPDATE app_user SET failed_logins = NULL, locked_out_until = NULL WHERE login_name = 'user'");
 	}
 
 	@Test
-	void tenFailedLogins_locksAccount_eleventhReturns423() {
-		// 10 failed login attempts
-		for (int i = 0; i < 10; i++) {
+	void threeFailedLogins_locksAccount_fourthReturns423() {
+		// 3 failed login attempts triggers lockout (login-lock-attempts=3 in test profile)
+		for (int i = 0; i < 3; i++) {
 			given().contentType(ContentType.JSON).body(
 					"{\"loginName\":\"user\",\"password\":\"WRONG\",\"rememberMe\":false}")
 					.when().post("/api/v1/auth/login").then().statusCode(401);
 		}
 
-		// Verify lockedOutUntil was set
-		var lockedUser = this.jpaQueryFactory.selectFrom(QUser.user)
-				.where(QUser.user.loginName.eq("user")).fetchFirst();
-		org.assertj.core.api.Assertions.assertThat(lockedUser.getLockedOutUntil()).isNotNull();
+		// Verify lockedOutUntil was written to DB — use JdbcTemplate to bypass JPA L1 cache
+		var lockedOutUntil = this.jdbcTemplate.queryForObject(
+				"SELECT locked_out_until FROM app_user WHERE login_name = 'user'",
+				java.sql.Timestamp.class);
+		Assertions.assertThat(lockedOutUntil).isNotNull();
 
-		// 11th attempt → 423
+		// Next attempt → 423 Locked
 		given().contentType(ContentType.JSON)
 				.body("{\"loginName\":\"user\",\"password\":\"WRONG\",\"rememberMe\":false}")
 				.when().post("/api/v1/auth/login").then().statusCode(423);

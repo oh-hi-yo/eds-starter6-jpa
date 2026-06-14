@@ -6,6 +6,8 @@ import java.time.ZonedDateTime;
 import org.springframework.context.ApplicationListener;
 import org.springframework.security.authentication.event.AuthenticationFailureBadCredentialsEvent;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import ch.rasc.eds.starter.Application;
@@ -27,11 +29,15 @@ public class UserAuthErrorHandler
 	private final TransactionTemplate transactionTemplate;
 
 	public UserAuthErrorHandler(JPAQueryFactory jpaQueryFactory,
-			TransactionTemplate transactionTemplate, AppProperties appProperties) {
+			PlatformTransactionManager transactionManager, AppProperties appProperties) {
 		this.jpaQueryFactory = jpaQueryFactory;
-		this.transactionTemplate = transactionTemplate;
 		this.loginLockAttempts = appProperties.getLoginLockAttempts();
 		this.loginLockMinutes = appProperties.getLoginLockMinutes();
+		// REQUIRES_NEW ensures the lockout update commits even when the outer
+		// @Transactional login() method rolls back on BadCredentialsException
+		TransactionTemplate tt = new TransactionTemplate(transactionManager);
+		tt.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+		this.transactionTemplate = tt;
 	}
 
 	@Override

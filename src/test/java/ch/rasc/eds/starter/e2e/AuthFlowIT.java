@@ -51,7 +51,7 @@ class AuthFlowIT extends AbstractIT {
 		given().contentType(ContentType.JSON)
 				.body("{\"loginName\":\"admin\",\"password\":\"WRONG\",\"rememberMe\":false}")
 				.when().post("/api/v1/auth/login").then().statusCode(401)
-				.contentType(MediaType.APPLICATION_JSON_VALUE)
+				.contentType("application/problem+json")
 				.body("title", equalTo("Authentication Failed"));
 	}
 

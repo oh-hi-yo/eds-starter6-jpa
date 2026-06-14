@@ -31,7 +31,7 @@
       <dependency>
         <groupId>org.testcontainers</groupId>
         <artifactId>testcontainers-bom</artifactId>
-        <version>1.20.4</version>
+        <version>1.21.0</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
@@ -284,6 +284,12 @@
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-failsafe-plugin</artifactId>
+            <configuration>
+              <environmentVariables>
+                <!-- Docker 29.x dropped API support below 1.40; docker-java defaults to 1.32 -->
+                <DOCKER_API_VERSION>1.54</DOCKER_API_VERSION>
+              </environmentVariables>
+            </configuration>
             <executions>
               <execution>
                 <goals>

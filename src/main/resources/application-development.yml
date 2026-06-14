@@ -11,6 +11,10 @@ server:
   compression:
     enabled: false
 
+springdoc:
+  swagger-ui:
+    with-credentials: true
+
 logging:
   level:
     org.springframework: INFO

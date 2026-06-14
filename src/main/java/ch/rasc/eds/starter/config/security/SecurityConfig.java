@@ -65,7 +65,7 @@ class SecurityConfig {
 		return web -> {
 			if (this.environment.acceptsProfiles(Profiles.of("development"))) {
 				web.ignoring().requestMatchers("/resources/**", "/build/**", "/ext/**",
-						"/**/*.js", "/bootstrap.json", "/robots.txt");
+						"/bootstrap.json", "/robots.txt");
 			}
 			else {
 				web.ignoring().requestMatchers("/resources/**", "/app.js", "/app.json",
@@ -81,6 +81,7 @@ class SecurityConfig {
 		  .authorizeHttpRequests(authz -> authz
 		    .requestMatchers("/index.html", "/csrf", "/", "/api/v1/auth/**").permitAll()
 		    .requestMatchers("/actuator/info", "/actuator/health").permitAll()
+		    .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
 		    .anyRequest().authenticated()
 		  )
 		  .addFilterBefore(new TwoFactorFilter(),

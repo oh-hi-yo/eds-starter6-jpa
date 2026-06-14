@@ -55,7 +55,7 @@ class Startup {
 			normalUser.setLocale("de");
 			normalUser.setPasswordHash(this.passwordEncoder.encode("user"));
 			normalUser.setEnabled(true);
-			adminUser.setDeleted(false);
+			normalUser.setDeleted(false);
 			normalUser.setAuthorities(Authority.USER.name());
 			this.jpaQueryFactory.getEntityManager().persist(normalUser);
 		}
