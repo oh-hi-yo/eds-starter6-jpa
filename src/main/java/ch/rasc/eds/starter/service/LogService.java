@@ -7,7 +7,6 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.RequestHeader;
 
-import ch.ralscha.extdirectspring.annotation.ExtDirectMethod;
 import ch.rasc.eds.starter.Application;
 
 @Service
@@ -15,7 +14,6 @@ public class LogService {
 
 	private final static String lineSeparator = System.getProperty("line.separator");
 
-	@ExtDirectMethod
 	@Async
 	public void logClientCrash(@RequestHeader(value = HttpHeaders.USER_AGENT,
 			required = false) String userAgent, Map<String, Object> crashData) {

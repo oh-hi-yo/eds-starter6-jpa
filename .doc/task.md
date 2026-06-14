@@ -394,13 +394,214 @@ src/test/
 > **目標：** 升級後端至 Spring Boot 3.x + JDK 17，並新增 20 個 REST API endpoints（`/api/v1/*`），使用 Strangler Fig 策略保留舊 Ext Direct `/router` 端點並行。
 >
 > **Assignee 總覽：**  
-> - Architect：Task 2.1（升級規劃）+ Task 2.6（OpenAPI）  
-> - Backend Dev：Task 2.1–2.6（主力實作）  
-> - QA：JUnit 測試協助、驗收
+> - Architect：Task 2.0（測試架構設計）+ Task 2.1（升級規劃）+ Task 2.6（OpenAPI）  
+> - Backend Dev：Task 2.0–2.6（主力實作）  
+> - QA：三層測試驗收、覆蓋率監控
+>
+> **測試策略（三層架構）：**
+>
+> | 層級 | 框架 | 指令 | 速度 |
+> |------|------|------|------|
+> | Layer 1：Unit Tests | `@WebMvcTest` + MockMvc + Mockito | `./mvnw test` | < 30s |
+> | Layer 2：Integration Tests | `@SpringBootTest` + Testcontainers MySQL 8.x | `./mvnw verify -Pintegration` | ~2 min |
+> | Layer 3：E2E API Tests | REST Assured + Testcontainers + RANDOM_PORT | `./mvnw verify -Pintegration` | ~3 min |
+>
+> TDD 工作流：**Red → Green → Refactor**（先寫失敗測試，再實作，再重構）  
+> 覆蓋率目標：**80%+**（JaCoCo，`mvn verify -Pintegration jacoco:report`）
 
 ---
 
 ### Sprint 3：Spring Boot 升級（Week 5–6）
+
+---
+
+#### Task 2.0 — 測試基礎設施建立
+
+**Assignee：** Backend Dev + Architecture (Team Lead)  
+**Skills：** `ecc:java-reviewer`、`ecc:java-build-resolver`
+
+**目標：** 從零建立完整的三層測試基礎設施，後續所有 Task 都在此基礎上 TDD。
+
+**實作步驟：**
+
+1. `pom.xml` 加入所有測試依賴（`<scope>test</scope>`）：
+
+   ```xml
+   <!-- Core: JUnit 5 + Mockito + AssertJ（spring-boot-starter-test 內含） -->
+   <dependency>
+     <groupId>org.springframework.boot</groupId>
+     <artifactId>spring-boot-starter-test</artifactId>
+     <scope>test</scope>
+   </dependency>
+
+   <!-- Spring Security Test -->
+   <dependency>
+     <groupId>org.springframework.security</groupId>
+     <artifactId>spring-security-test</artifactId>
+     <scope>test</scope>
+   </dependency>
+
+   <!-- Testcontainers -->
+   <dependency>
+     <groupId>org.testcontainers</groupId>
+     <artifactId>junit-jupiter</artifactId>
+     <scope>test</scope>
+   </dependency>
+   <dependency>
+     <groupId>org.testcontainers</groupId>
+     <artifactId>mysql</artifactId>
+     <scope>test</scope>
+   </dependency>
+
+   <!-- REST Assured（E2E API Tests） -->
+   <dependency>
+     <groupId>io.rest-assured</groupId>
+     <artifactId>rest-assured</artifactId>
+     <scope>test</scope>
+   </dependency>
+   <dependency>
+     <groupId>io.rest-assured</groupId>
+     <artifactId>spring-mock-mvc</artifactId>
+     <scope>test</scope>
+   </dependency>
+
+   <!-- GreenMail（Email 測試） -->
+   <dependency>
+     <groupId>com.icegreen</groupId>
+     <artifactId>greenmail-spring6</artifactId>
+     <version>2.1.x</version>
+     <scope>test</scope>
+   </dependency>
+
+   <!-- Awaitility（非同步斷言） -->
+   <dependency>
+     <groupId>org.awaitility</groupId>
+     <artifactId>awaitility</artifactId>
+     <scope>test</scope>
+   </dependency>
+
+   <!-- MySQL Connector（Testcontainers 執行期需要） -->
+   <dependency>
+     <groupId>com.mysql</groupId>
+     <artifactId>mysql-connector-j</artifactId>
+     <scope>test</scope>
+   </dependency>
+   ```
+
+2. `pom.xml` 加入 BOM（Testcontainers 版本管理）：
+
+   ```xml
+   <dependencyManagement>
+     <dependencies>
+       <dependency>
+         <groupId>org.testcontainers</groupId>
+         <artifactId>testcontainers-bom</artifactId>
+         <version>1.20.x</version>
+         <type>pom</type>
+         <scope>import</scope>
+       </dependency>
+     </dependencies>
+   </dependencyManagement>
+   ```
+
+3. `pom.xml` 加入 JaCoCo + Integration profile：
+
+   ```xml
+   <plugin>
+     <groupId>org.jacoco</groupId>
+     <artifactId>jacoco-maven-plugin</artifactId>
+     <executions>
+       <execution><id>prepare-agent</id><goals><goal>prepare-agent</goal></goals></execution>
+       <execution><id>report</id><phase>verify</phase><goals><goal>report</goal></goals></execution>
+     </executions>
+   </plugin>
+
+   <profiles>
+     <profile>
+       <id>integration</id>
+       <build>
+         <plugins>
+           <plugin>
+             <groupId>org.apache.maven.plugins</groupId>
+             <artifactId>maven-failsafe-plugin</artifactId>
+             <executions>
+               <execution>
+                 <goals><goal>integration-test</goal><goal>verify</goal></goals>
+               </execution>
+             </executions>
+           </plugin>
+         </plugins>
+       </build>
+     </profile>
+   </profiles>
+   ```
+
+4. 建立目錄結構：
+
+   ```
+   src/test/java/ch/rasc/eds/starter/
+   ├── AbstractIT.java          ← 共用 Testcontainers base class
+   ├── web/                     ← @WebMvcTest unit tests
+   ├── service/                 ← @SpringBootTest service IT
+   ├── security/                ← Security 測試
+   └── e2e/                     ← REST Assured E2E tests
+   src/test/resources/
+   └── application-test.yml    ← H2 for unit, Testcontainers URL injected dynamically
+   ```
+
+5. 建立 `AbstractIT.java`（所有 `*IT.java` 繼承）：
+
+   ```java
+   @Testcontainers
+   @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+   @ActiveProfiles("test")
+   public abstract class AbstractIT {
+
+       @Container
+       static MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.4")
+           .withDatabaseName("eds_test")
+           .withReuse(true);  // 容器重用，加速測試
+
+       @DynamicPropertySource
+       static void configureProperties(DynamicPropertyRegistry registry) {
+           registry.add("spring.datasource.url", MYSQL::getJdbcUrl);
+           registry.add("spring.datasource.username", MYSQL::getUsername);
+           registry.add("spring.datasource.password", MYSQL::getPassword);
+           registry.add("spring.datasource.driver-class-name", () -> "com.mysql.cj.jdbc.Driver");
+       }
+   }
+   ```
+
+6. 建立 `src/test/resources/application-test.yml`：
+
+   ```yaml
+   spring:
+     jpa:
+       hibernate:
+         ddl-auto: none   # Liquibase 負責 schema
+     liquibase:
+       enabled: true
+   logging:
+     level:
+       org.testcontainers: WARN
+       com.github.dockerjava: WARN
+   ```
+
+7. 建立 `SmokeTest.java` 驗證基礎設施：
+
+   ```java
+   class SmokeTest extends AbstractIT {
+       @Test void contextLoads() { }
+   }
+   ```
+
+**驗收標準：**
+
+| 驗證 | 指令 | 通過條件 |
+|------|------|---------|
+| Unit smoke | `./mvnw test` | SmokeTest（H2）通過 |
+| IT smoke | `./mvnw verify -Pintegration` | SmokeTest（Testcontainers MySQL）通過 |
+| Docker 確認 | `docker ps` 執行中 | `mysql:8.4` 容器出現 |
 
 ---
 
@@ -466,14 +667,20 @@ src/test/
 
 **目標：** 移除已棄用的 `WebSecurityConfigurerAdapter`，改用 `SecurityFilterChain`，完整設定認證、2FA、速率限制。
 
-**TDD 優先——先寫：**
+**TDD 優先——先寫（三層）：**
 
 ```
-src/test/java/.../security/
-  SecurityConfigTest.java        # 各路由的授權規則（permitAll / authenticated）
-  LockoutTest.java               # 10 次失敗 → 423 Locked
-  CsrfTest.java                  # 無 CSRF token → 403
-  RateLimitTest.java             # 5+1 次/分 → 429
+Layer 1 — @WebMvcTest（src/test/java/.../web/）
+  AuthSecurityTest.java          # 各路由授權規則：permitAll vs authenticated
+
+Layer 2 — @SpringBootTest + Testcontainers（src/test/java/.../security/）
+  SecurityConfigIT.java          # 路由授權整合測試（真實 DB）
+  LockoutIT.java                 # 10 次登入失敗 → lockedOutUntil 寫入 DB → 423
+  CsrfIT.java                    # 無 XSRF-TOKEN header → 403
+
+Layer 3 — REST Assured E2E（src/test/java/.../e2e/）
+  AuthFlowIT.java                # 完整 HTTP：login → cookie → me → logout
+  LockoutFlowIT.java             # 10 次失敗密碼 → 423 + lockedUntil 欄位
 ```
 
 **實作步驟：**
@@ -517,10 +724,11 @@ src/test/java/.../security/
 
 | 驗證 | 條件 |
 |------|------|
-| JUnit `SecurityConfigTest` | `/api/v1/users` 未認證 → 401 JSON |
-| JUnit `LockoutTest` | 10 次失敗 → 423，含 `lockedUntil` 欄位 |
-| JUnit `CsrfTest` | POST 無 XSRF-TOKEN → 403 |
-| JUnit `RateLimitTest` | 6 次登入/分 → 429 |
+| `./mvnw test` `AuthSecurityTest` | `/api/v1/users` 未認證 → 401 JSON（@WebMvcTest） |
+| `./mvnw verify -Pintegration` `SecurityConfigIT` | 同上，真實 DB（Testcontainers） |
+| `./mvnw verify -Pintegration` `LockoutIT` | 10 次失敗 → `lockedOutUntil` 寫入 MySQL → 423 |
+| `./mvnw verify -Pintegration` `CsrfIT` | POST 無 XSRF-TOKEN → 403 |
+| `./mvnw verify -Pintegration` `AuthFlowIT` | REST Assured：login cookie → me → logout 完整 HTTP 流程 |
 
 ---
 
@@ -535,7 +743,19 @@ src/test/java/.../security/
 
 **目標：** 實作認證相關的所有 REST endpoint。
 
-**TDD 優先——先寫 MockMvc 測試，再寫 Controller。**
+**TDD 優先——三層同步撰寫，再寫 Controller。**
+
+```
+Layer 1 — @WebMvcTest（src/test/java/.../web/）
+  AuthControllerTest.java        # 7 端點 HTTP 契約（status/body/headers）
+
+Layer 2 — @SpringBootTest + Testcontainers（src/test/java/.../service/）
+  AuthServiceIT.java             # 業務邏輯：BCrypt 驗證、session 建立、2FA secret 生成
+
+Layer 3 — REST Assured E2E（src/test/java/.../e2e/）
+  AuthFlowIT.java                # login → 2fa → me → logout 完整 HTTP + cookie
+  PasswordResetIT.java           # reset-request → GreenMail 取 token → reset → 登入
+```
 
 **端點清單：**
 
@@ -571,9 +791,10 @@ src/test/java/.../security/
 
 | 驗證 | 條件 |
 |------|------|
-| JUnit `AuthControllerTest`（MockMvc） | 7 個端點各自 happy path 通過 |
-| JUnit `AuthControllerTest` | 錯誤密碼 → 401；帳號鎖定 → 423；2FA pending → 403 |
-| Integration Test（Testcontainers） | login → 2fa → me → logout 完整流程 |
+| `./mvnw test` `AuthControllerTest` | 7 端點 happy + error path（@WebMvcTest，Mockito） |
+| `./mvnw verify -Pintegration` `AuthServiceIT` | 錯誤密碼 → 401；鎖定 → 423；2FA pending → 403（Testcontainers） |
+| `./mvnw verify -Pintegration` `AuthFlowIT` | REST Assured：login → 2fa → me → logout，cookie 驗證 |
+| `./mvnw verify -Pintegration` `PasswordResetIT` | GreenMail 收信、token 驗證、新密碼登入 |
 
 ---
 
@@ -614,10 +835,10 @@ src/test/java/.../security/
 
 | 驗證 | 條件 |
 |------|------|
-| JUnit `UserControllerTest`（MockMvc） | 7 端點 happy path + error path |
-| JUnit | 軟刪除後 GET 不返回已刪資料 |
-| Integration Test | 新增 → GET → 編輯 → GET → 軟刪除 → GET 消失 |
-| JUnit | 分頁：size=5，第 2 頁回正確資料 |
+| `./mvnw test` `UserControllerTest` | 7 端點 happy + error path（@WebMvcTest，Mockito） |
+| `./mvnw verify -Pintegration` `UserServiceIT` | 新增 → GET → 編輯 → 軟刪除 → GET 消失（Testcontainers MySQL） |
+| `./mvnw verify -Pintegration` `UserCrudIT` | REST Assured：完整 CRUD + 分頁（size=5 第 2 頁） |
+| `./mvnw verify -Pintegration` `UserCrudIT` | USER 角色呼叫 DELETE → 403；unlock → 200 |
 
 ---
 
@@ -650,9 +871,9 @@ src/test/java/.../security/
 
 | 驗證 | 條件 |
 |------|------|
-| JUnit MockMvc | 8 個端點 happy path |
-| JUnit | 2FA enable → 回 `otpauth://` URI；OTP 驗證通過後 `twoFactorAuth=true` |
-| JUnit | 撤銷裝置後 GET devices 不再返回 |
+| `./mvnw test` `UserConfigControllerTest` | 8 端點 happy path（@WebMvcTest） |
+| `./mvnw verify -Pintegration` `TwoFactorIT` | 2FA enable → `otpauth://` URI；TOTP 驗證 → DB `twoFactorAuth=true` |
+| `./mvnw verify -Pintegration` `ProfileFlowIT` | REST Assured：settings → 2fa enable/disable → devices → revoke |
 
 ---
 
@@ -720,14 +941,30 @@ src/test/java/.../security/
 
 | # | 驗證項目 | 執行方式 | 通過條件 |
 |---|---------|---------|---------|
-| 1 | 後端單元測試 | `./mvnw test` | 全綠 |
-| 2 | 整合測試 | `./mvnw verify -Pintegration` | Testcontainers MySQL 全綠 |
-| 3 | OpenAPI 覆蓋 | Swagger UI 目視確認 | 所有 20+ 端點記錄 |
-| 4 | TypeScript 型別 | `pnpm build` | 0 errors（含 openapi-typescript 型別） |
-| 5 | 安全掃描 | `ecc:security-scan` agent | 無 HIGH / CRITICAL 問題 |
-| 6 | Strangler Fig | `POST http://localhost:8080/router` | Ext Direct 仍正常回應 |
+| 1 | Layer 1 Unit Tests | `./mvnw test` | 全綠，< 30s |
+| 2 | Layer 2 Integration Tests | `./mvnw verify -Pintegration` | Testcontainers MySQL 全綠 |
+| 3 | Layer 3 E2E API Tests | `./mvnw verify -Pintegration` | REST Assured 全流程通過 |
+| 4 | 測試覆蓋率 | `./mvnw verify -Pintegration jacoco:report` | ≥ 80%（`target/site/jacoco/`） |
+| 5 | Email E2E | GreenMail 驗收 | 密碼重設信收到、token 有效 |
+| 6 | OpenAPI 覆蓋 | Swagger UI 目視確認 | 所有 20+ 端點記錄 |
+| 7 | TypeScript 型別 | `cd client-next && pnpm build` | 0 errors（openapi-typescript 型別） |
+| 8 | 安全掃描 | `ecc:security-review` agent | 無 HIGH / CRITICAL 問題 |
+| 9 | Strangler Fig | `POST http://localhost:8080/router` | Ext Direct heartbeat 仍正常回應 |
 
 **負責人：QA + Architecture (Team Lead)**
+
+> **測試工具速查：**
+> ```bash
+> # 只跑 Unit Tests（快速，CI commit hook）
+> ./mvnw test
+>
+> # 全部三層（需 Docker）
+> ./mvnw verify -Pintegration
+>
+> # 查看覆蓋率報告
+> ./mvnw verify -Pintegration jacoco:report
+> open target/site/jacoco/index.html
+> ```
 
 ---
 
@@ -914,6 +1151,6 @@ e2e/
 | Sprint 0 | Week 0 | 文件準備 ✅ | Architect |
 | Sprint 1 | Week 1–2 | Task 1.1–1.3（FE 基礎） | FE Dev |
 | Sprint 2 | Week 3–4 | Task 1.4–1.6（FE 核心）+ Phase 1 Gate | FE Dev + QA |
-| Sprint 3 | Week 5–6 | Task 2.1–2.2（BE 升級） | BE Dev |
-| Sprint 4 | Week 6–7 | Task 2.3–2.6（REST API）+ Phase 2 Gate | BE Dev + QA |
+| Sprint 3 | Week 5–6 | Task 2.0（測試基礎設施）+ Task 2.1–2.2（BE 升級） | BE Dev |
+| Sprint 4 | Week 6–7 | Task 2.3–2.6（REST API + 三層測試）+ Phase 2 Gate | BE Dev + QA |
 | Sprint 5 | Week 8–9 | Task 3.1–3.3（整合 + E2E）+ Phase 3 Gate | All |

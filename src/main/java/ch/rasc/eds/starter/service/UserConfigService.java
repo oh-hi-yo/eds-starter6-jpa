@@ -1,12 +1,9 @@
 package ch.rasc.eds.starter.service;
 
-import static ch.ralscha.extdirectspring.annotation.ExtDirectMethodType.STORE_MODIFY;
-import static ch.ralscha.extdirectspring.annotation.ExtDirectMethodType.STORE_READ;
-
 import java.util.List;
 import java.util.Locale;
 
-import javax.validation.Validator;
+import jakarta.validation.Validator;
 
 import org.springframework.context.MessageSource;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -15,8 +12,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import ch.ralscha.extdirectspring.annotation.ExtDirectMethod;
-import ch.ralscha.extdirectspring.bean.ExtDirectStoreResult;
 import ch.rasc.eds.starter.config.security.JpaUserDetails;
 import ch.rasc.eds.starter.config.security.RequireAnyAuthority;
 import ch.rasc.eds.starter.dto.UserSettings;
@@ -24,9 +19,9 @@ import ch.rasc.eds.starter.entity.PersistentLogin;
 import ch.rasc.eds.starter.entity.QPersistentLogin;
 import ch.rasc.eds.starter.entity.User;
 import ch.rasc.eds.starter.util.JPAQueryFactory;
+import ch.rasc.eds.starter.util.ServiceResult;
 import ch.rasc.eds.starter.util.TotpAuthUtil;
 import ch.rasc.eds.starter.util.ValidationMessages;
-import ch.rasc.eds.starter.util.ValidationMessagesResult;
 import ch.rasc.eds.starter.util.ValidationUtil;
 import eu.bitwalker.useragentutils.UserAgent;
 
@@ -50,16 +45,12 @@ public class UserConfigService {
 		this.passwordEncoder = passwordEncoder;
 	}
 
-	@ExtDirectMethod(STORE_READ)
 	@Transactional(readOnly = true)
-	public ExtDirectStoreResult<UserSettings> readSettings(
+	public UserSettings readSettings(
 			@AuthenticationPrincipal JpaUserDetails jpaUserDetails) {
-		UserSettings userSettings = new UserSettings(
-				jpaUserDetails.getUser(this.jpaQueryFactory));
-		return new ExtDirectStoreResult<>(userSettings);
+		return new UserSettings(jpaUserDetails.getUser(this.jpaQueryFactory));
 	}
 
-	@ExtDirectMethod
 	@Transactional
 	public String enable2f(@AuthenticationPrincipal JpaUserDetails jpaUserDetails) {
 		User user = jpaUserDetails.getUser(this.jpaQueryFactory);
@@ -67,16 +58,14 @@ public class UserConfigService {
 		return user.getSecret();
 	}
 
-	@ExtDirectMethod
 	@Transactional
 	public void disable2f(@AuthenticationPrincipal JpaUserDetails jpaUserDetails) {
 		User user = jpaUserDetails.getUser(this.jpaQueryFactory);
 		user.setSecret(null);
 	}
 
-	@ExtDirectMethod(STORE_MODIFY)
 	@Transactional
-	public ValidationMessagesResult<UserSettings> updateSettings(
+	public ServiceResult<UserSettings> updateSettings(
 			UserSettings modifiedUserSettings,
 			@AuthenticationPrincipal JpaUserDetails jpaUserDetails, Locale locale) {
 
@@ -139,10 +128,9 @@ public class UserConfigService {
 			user.setLocale(modifiedUserSettings.getLocale());
 		}
 
-		return new ValidationMessagesResult<>(modifiedUserSettings, validations);
+		return new ServiceResult<>(modifiedUserSettings, validations);
 	}
 
-	@ExtDirectMethod(STORE_READ)
 	@Transactional(readOnly = true)
 	public List<PersistentLogin> readPersistentLogins(
 			@AuthenticationPrincipal JpaUserDetails jpaUserDetails) {
@@ -165,7 +153,6 @@ public class UserConfigService {
 		return persistentLogins;
 	}
 
-	@ExtDirectMethod(STORE_MODIFY)
 	@Transactional
 	public void destroyPersistentLogin(String series,
 			@AuthenticationPrincipal JpaUserDetails jpaUserDetails) {

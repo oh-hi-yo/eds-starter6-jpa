@@ -1,8 +1,5 @@
 package ch.rasc.eds.starter.service;
 
-import static ch.ralscha.extdirectspring.annotation.ExtDirectMethodType.STORE_MODIFY;
-import static ch.ralscha.extdirectspring.annotation.ExtDirectMethodType.STORE_READ;
-
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -14,31 +11,28 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-import javax.validation.Validator;
+import jakarta.validation.Validator;
 
 import org.springframework.context.MessageSource;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import com.querydsl.core.BooleanBuilder;
-import com.querydsl.core.QueryResults;
 import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.jpa.JPQLQuery;
 import com.querydsl.jpa.impl.JPAQuery;
 
-import ch.ralscha.extdirectspring.annotation.ExtDirectMethod;
-import ch.ralscha.extdirectspring.bean.ExtDirectStoreReadRequest;
-import ch.ralscha.extdirectspring.bean.ExtDirectStoreResult;
-import ch.ralscha.extdirectspring.filter.StringFilter;
 import ch.rasc.eds.starter.config.security.RequireAdminAuthority;
 import ch.rasc.eds.starter.entity.Authority;
 import ch.rasc.eds.starter.entity.QUser;
 import ch.rasc.eds.starter.entity.User;
 import ch.rasc.eds.starter.util.JPAQueryFactory;
-import ch.rasc.eds.starter.util.QuerydslUtil;
+import ch.rasc.eds.starter.util.ServiceResult;
 import ch.rasc.eds.starter.util.ValidationMessages;
-import ch.rasc.eds.starter.util.ValidationMessagesResult;
 import ch.rasc.eds.starter.util.ValidationUtil;
 import de.danielbechler.diff.ObjectDiffer;
 import de.danielbechler.diff.ObjectDifferBuilder;
@@ -65,50 +59,38 @@ public class UserService {
 		this.mailService = mailService;
 	}
 
-	@ExtDirectMethod(STORE_READ)
 	@Transactional(readOnly = true)
-	public ExtDirectStoreResult<User> read(ExtDirectStoreReadRequest request) {
-
+	public Page<User> read(int page, int size, String q) {
 		JPQLQuery<User> query = this.jpaQueryFactory.selectFrom(QUser.user);
-		if (!request.getFilters().isEmpty()) {
-			StringFilter filter = (StringFilter) request.getFilters().iterator().next();
-
+		if (StringUtils.hasText(q)) {
 			BooleanBuilder bb = new BooleanBuilder();
-			bb.or(QUser.user.loginName.containsIgnoreCase(filter.getValue()));
-			bb.or(QUser.user.lastName.containsIgnoreCase(filter.getValue()));
-			bb.or(QUser.user.firstName.containsIgnoreCase(filter.getValue()));
-			bb.or(QUser.user.email.containsIgnoreCase(filter.getValue()));
-
+			bb.or(QUser.user.loginName.containsIgnoreCase(q));
+			bb.or(QUser.user.lastName.containsIgnoreCase(q));
+			bb.or(QUser.user.firstName.containsIgnoreCase(q));
+			bb.or(QUser.user.email.containsIgnoreCase(q));
 			query.where(bb);
 		}
 		query.where(QUser.user.deleted.isFalse());
 
-		QuerydslUtil.addPagingAndSorting(query, request, User.class, QUser.user);
-		QueryResults<User> searchResult = query.fetchResults();
+		long total = query.fetchCount();
+		query.offset((long) page * size).limit(size);
+		List<User> content = query.fetch();
 
-		return new ExtDirectStoreResult<>(searchResult.getTotal(),
-				searchResult.getResults());
+		return new PageImpl<>(content, PageRequest.of(page, size), total);
 	}
 
-	@ExtDirectMethod(STORE_MODIFY)
 	@Transactional
-	public ExtDirectStoreResult<User> destroy(User destroyUser) {
-		ExtDirectStoreResult<User> result = new ExtDirectStoreResult<>();
-		if (!isLastAdmin(destroyUser.getId())) {
-			User user = this.jpaQueryFactory.getEntityManager().find(User.class,
-					destroyUser.getId());
+	public boolean destroy(Long userId) {
+		if (!isLastAdmin(userId)) {
+			User user = this.jpaQueryFactory.getEntityManager().find(User.class, userId);
 			this.jpaQueryFactory.getEntityManager().remove(user);
-			result.setSuccess(Boolean.TRUE);
+			return true;
 		}
-		else {
-			result.setSuccess(Boolean.FALSE);
-		}
-		return result;
+		return false;
 	}
 
-	@ExtDirectMethod(STORE_MODIFY)
 	@Transactional
-	public ValidationMessagesResult<User> update(User updatedEntity, Locale locale) {
+	public ServiceResult<User> update(User updatedEntity, Locale locale) {
 		List<ValidationMessages> violations = new ArrayList<>();
 		if (updatedEntity.getId() != null && updatedEntity.getId() > 0) {
 			User dbUser = this.jpaQueryFactory.selectFrom(QUser.user)
@@ -134,13 +116,10 @@ public class UserService {
 			}
 
 			User merged = this.jpaQueryFactory.getEntityManager().merge(updatedEntity);
-			return new ValidationMessagesResult<>(merged);
+			return ServiceResult.success(merged);
 		}
 
-		ValidationMessagesResult<User> result = new ValidationMessagesResult<>(
-				updatedEntity);
-		result.setValidations(violations);
-		return result;
+		return ServiceResult.failure(updatedEntity, violations);
 	}
 
 	private List<ValidationMessages> checkIfLastAdmin(User updatedEntity, Locale locale,
@@ -251,14 +230,12 @@ public class UserService {
 		return true;
 	}
 
-	@ExtDirectMethod(STORE_READ)
 	public List<Map<String, String>> readAuthorities() {
 		return Arrays.stream(Authority.values())
 				.map(r -> Collections.singletonMap("name", r.name()))
 				.collect(Collectors.toList());
 	}
 
-	@ExtDirectMethod
 	@Transactional
 	public void unlock(Long userId) {
 		this.jpaQueryFactory.update(QUser.user).setNull(QUser.user.lockedOutUntil)
@@ -266,14 +243,12 @@ public class UserService {
 				.execute();
 	}
 
-	@ExtDirectMethod
 	@Transactional
 	public void disableTwoFactorAuth(Long userId) {
 		this.jpaQueryFactory.update(QUser.user).setNull(QUser.user.secret)
 				.where(QUser.user.id.eq(userId)).execute();
 	}
 
-	@ExtDirectMethod
 	@Transactional
 	public void sendPassordResetEmail(Long userId) {
 		User user = this.jpaQueryFactory.getEntityManager().find(User.class, userId);

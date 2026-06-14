@@ -2,24 +2,18 @@ package ch.rasc.eds.starter.entity;
 
 import java.time.ZonedDateTime;
 
-import javax.persistence.Entity;
-import javax.persistence.Id;
-import javax.persistence.ManyToOne;
-import javax.persistence.Transient;
-import javax.validation.constraints.NotNull;
-import javax.validation.constraints.Size;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Transient;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 
-import ch.rasc.extclassgenerator.Model;
-import ch.rasc.extclassgenerator.ModelField;
-
 @Entity
-@Model(value = "Starter.model.PersistentLogin", idProperty = "series",
-		readMethod = "userConfigService.readPersistentLogins", writeAllFields = false,
-		destroyMethod = "userConfigService.destroyPersistentLogin")
 @JsonInclude(Include.NON_NULL)
 public class PersistentLogin {
 
@@ -30,7 +24,6 @@ public class PersistentLogin {
 	@NotNull
 	private String token;
 
-	@ModelField(dateFormat = "time")
 	private ZonedDateTime lastUsed;
 
 	@Size(min = 0, max = 39)

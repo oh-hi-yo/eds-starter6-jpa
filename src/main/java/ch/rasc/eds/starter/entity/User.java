@@ -4,32 +4,24 @@ import java.time.ZonedDateTime;
 import java.util.HashSet;
 import java.util.Set;
 
-import javax.persistence.CascadeType;
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.OneToMany;
-import javax.persistence.Table;
-import javax.validation.constraints.Size;
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.Table;
+import jakarta.validation.constraints.Size;
 
-import javax.validation.constraints.Email;
-import javax.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.util.StringUtils;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 
-import ch.rasc.extclassgenerator.Model;
-import ch.rasc.extclassgenerator.ModelField;
-import ch.rasc.extclassgenerator.ModelType;
-
 @Entity
 @Table(name = "AppUser")
-@Model(value = "Starter.model.User", readMethod = "userService.read",
-		createMethod = "userService.update", updateMethod = "userService.update",
-		destroyMethod = "userService.destroy", paging = true, identifier = "negative")
 @JsonInclude(Include.NON_NULL)
-@ModelField(value = "twoFactorAuth", persist = false, type = ModelType.BOOLEAN)
 public class User extends AbstractPersistable {
 
 	@NotBlank(message = "{fieldrequired}")
@@ -67,13 +59,10 @@ public class User extends AbstractPersistable {
 	@OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, mappedBy = "user")
 	private Set<PersistentLogin> persistentLogins = new HashSet<>();
 
-	@ModelField(persist = false)
 	private Integer failedLogins;
 
-	@ModelField(dateFormat = "time", persist = false)
 	private ZonedDateTime lockedOutUntil;
 
-	@ModelField(dateFormat = "time", persist = false)
 	private ZonedDateTime lastAccess;
 
 	@Size(max = 36)

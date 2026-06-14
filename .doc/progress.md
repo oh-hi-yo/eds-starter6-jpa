@@ -14,7 +14,7 @@
 | Phase | 範圍 | 狀態 | 驗收 | 使用者確認 | Commit |
 |-------|------|------|------|-----------|--------|
 | Phase 1 | Frontend Revamp（React 19 + Next.js 16） | ✅ 完成 | ✅ 通過 | ⏳ 待確認 | ⬜ |
-| Phase 2 | Backend Migration（Spring Boot 3 + JDK 17） | ⬜ 未開始 | ⬜ | ⬜ | ⬜ |
+| Phase 2 | Backend Migration（Spring Boot 3 + JDK 17） | 🚧 進行中 | ⬜ | ⬜ | ⬜ |
 | Phase 3 | 整合 + E2E 驗收 | ⬜ 未開始 | ⬜ | ⬜ | ⬜ |
 
 圖例：⬜ 未開始 ｜ 🚧 進行中 ｜ ✅ 完成 ｜ ❌ 失敗

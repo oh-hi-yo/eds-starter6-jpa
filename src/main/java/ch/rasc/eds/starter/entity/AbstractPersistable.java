@@ -1,18 +1,15 @@
 package ch.rasc.eds.starter.entity;
 
-import javax.persistence.GeneratedValue;
-import javax.persistence.GenerationType;
-import javax.persistence.Id;
-import javax.persistence.MappedSuperclass;
-
-import ch.rasc.extclassgenerator.ModelField;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.MappedSuperclass;
 
 @MappedSuperclass
 public abstract class AbstractPersistable {
 
 	@Id
-	@GeneratedValue(strategy = GenerationType.AUTO)
-	@ModelField(useNull = true, convert = "null")
+	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
 	public Long getId() {

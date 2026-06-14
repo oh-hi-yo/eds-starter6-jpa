@@ -1,18 +1,18 @@
 package ch.rasc.eds.starter.config.security;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
-import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.builders.WebSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.RememberMeServices;
@@ -21,70 +21,79 @@ import org.springframework.security.web.authentication.logout.HttpStatusReturnin
 import ch.rasc.eds.starter.config.AppProperties;
 
 @Configuration
-@EnableGlobalMethodSecurity(prePostEnabled = true)
+@EnableMethodSecurity(prePostEnabled = true)
 @EnableWebSecurity
-class SecurityConfig extends WebSecurityConfigurerAdapter {
+class SecurityConfig {
 
-	@Autowired
-	private RememberMeServices rememberMeServices;
+	private final RememberMeServices rememberMeServices;
 
-	@Autowired
-	private AppProperties appProperties;
+	private final AppProperties appProperties;
 
-	@Autowired
-	private AuthenticationSuccessHandler authenticationSuccessHandler;
+	private final AuthenticationSuccessHandler authenticationSuccessHandler;
 
-	@Autowired
-	private Environment environment;
+	private final Environment environment;
 
-	@Override
-	public void configure(WebSecurity web) {
-		if (this.environment.acceptsProfiles(Profiles.of("development"))) {
-			web.ignoring().antMatchers("/resources/**", "/build/**", "/ext/**",
-					"/**/*.js", "/bootstrap.json", "/robots.txt");
-		}
-		else {
-			web.ignoring().antMatchers("/resources/**", "/app.js", "/app.json",
-					"/locale-de.js", "/i18n-de.js", "/i18n-en.js", "/robots.txt");
-		}
+	SecurityConfig(RememberMeServices rememberMeServices, AppProperties appProperties,
+			AuthenticationSuccessHandler authenticationSuccessHandler,
+			Environment environment) {
+		this.rememberMeServices = rememberMeServices;
+		this.appProperties = appProperties;
+		this.authenticationSuccessHandler = authenticationSuccessHandler;
+		this.environment = environment;
 	}
 
-	@Autowired
-	public void configureGlobal(AuthenticationManagerBuilder auth,
-			UserDetailsService userDetailsService, PasswordEncoder passwordEncoder)
-			throws Exception {
-		auth.userDetailsService(userDetailsService).passwordEncoder(passwordEncoder);
+	@Bean
+	public DaoAuthenticationProvider authenticationProvider(
+			UserDetailsService userDetailsService, PasswordEncoder passwordEncoder) {
+		DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
+		provider.setUserDetailsService(userDetailsService);
+		provider.setPasswordEncoder(passwordEncoder);
+		return provider;
 	}
 
-	@Override
-	protected void configure(HttpSecurity http) throws Exception {
+	@Bean
+	public WebSecurityCustomizer webSecurityCustomizer() {
+		return web -> {
+			if (this.environment.acceptsProfiles(Profiles.of("development"))) {
+				web.ignoring().requestMatchers("/resources/**", "/build/**", "/ext/**",
+						"/**/*.js", "/bootstrap.json", "/robots.txt");
+			}
+			else {
+				web.ignoring().requestMatchers("/resources/**", "/app.js", "/app.json",
+						"/locale-de.js", "/i18n-de.js", "/i18n-en.js", "/robots.txt");
+			}
+		};
+	}
+
+	@Bean
+	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 		// @formatter:off
 		http
-		  //.headers()
-		    //.frameOptions().sameOrigin()
-		  //  .and()
-		  .authorizeRequests()
-		    .antMatchers("/index.html", "/csrf", "/", "/router").permitAll()
-		    .antMatchers("/info", "/health").permitAll()
+		  .authorizeHttpRequests(authz -> authz
+		    .requestMatchers("/index.html", "/csrf", "/", "/api/v1/auth/**").permitAll()
+		    .requestMatchers("/actuator/info", "/actuator/health").permitAll()
 		    .anyRequest().authenticated()
-		    .and()
-		  .rememberMe()
-            .rememberMeServices(this.rememberMeServices)
-            .key(this.appProperties.getRemembermeCookieKey())
-		    .and()
-		  .formLogin()
-            .successHandler(this.authenticationSuccessHandler)
-            .failureHandler(new JsonAuthFailureHandler())
+		  )
+		  .rememberMe(rm -> rm
+		    .rememberMeServices(this.rememberMeServices)
+		    .key(this.appProperties.getRemembermeCookieKey())
+		  )
+		  .formLogin(form -> form
+		    .successHandler(this.authenticationSuccessHandler)
+		    .failureHandler(new JsonAuthFailureHandler())
 		    .permitAll()
-		    .and()
-		  .logout()
-            .logoutSuccessHandler(new HttpStatusReturningLogoutSuccessHandler())
-            .deleteCookies("JSESSIONID")
+		  )
+		  .logout(logout -> logout
+		    .logoutSuccessHandler(new HttpStatusReturningLogoutSuccessHandler())
+		    .deleteCookies("JSESSIONID")
 		    .permitAll()
-		    .and()
-		  .exceptionHandling()
-            .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED));
+		  )
+		  .exceptionHandling(ex -> ex
+		    .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
+		  )
+		  .csrf(csrf -> csrf.disable());
 		// @formatter:on
+		return http.build();
 	}
 
 }

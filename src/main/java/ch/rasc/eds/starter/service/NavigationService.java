@@ -1,7 +1,5 @@
 package ch.rasc.eds.starter.service;
 
-import static ch.ralscha.extdirectspring.annotation.ExtDirectMethodType.TREE_LOAD;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -13,7 +11,6 @@ import org.springframework.context.MessageSource;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Service;
 
-import ch.ralscha.extdirectspring.annotation.ExtDirectMethod;
 import ch.rasc.eds.starter.config.security.JpaUserDetails;
 import ch.rasc.eds.starter.dto.NavigationNode;
 import ch.rasc.eds.starter.entity.Authority;
@@ -35,7 +32,6 @@ public class NavigationService {
 				"x-fa fa-clock-o", "blank", Authority.USER));
 	}
 
-	@ExtDirectMethod(TREE_LOAD)
 	public List<NavigationNode> getNavigation(Locale locale,
 			@AuthenticationPrincipal JpaUserDetails jpaUserDetails) {
 

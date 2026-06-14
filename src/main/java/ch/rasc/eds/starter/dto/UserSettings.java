@@ -1,17 +1,12 @@
 package ch.rasc.eds.starter.dto;
 
-import javax.validation.constraints.Email;
-import javax.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 
 import ch.rasc.eds.starter.entity.User;
-import ch.rasc.extclassgenerator.Model;
-
-@Model(value = "Starter.model.UserSettings",
-		readMethod = "userConfigService.readSettings",
-		updateMethod = "userConfigService.updateSettings", rootProperty = "records")
 @JsonInclude(Include.NON_NULL)
 public class UserSettings {
 	@NotBlank(message = "{fieldrequired}")

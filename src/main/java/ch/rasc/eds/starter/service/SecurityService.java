@@ -1,7 +1,5 @@
 package ch.rasc.eds.starter.service;
 
-import static ch.ralscha.extdirectspring.annotation.ExtDirectMethodType.POLL;
-
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.Base64;
@@ -9,8 +7,8 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
 
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -27,9 +25,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.RequestParam;
 
-import ch.ralscha.extdirectspring.annotation.ExtDirectMethod;
-import ch.ralscha.extdirectspring.annotation.ExtDirectMethodType;
-import ch.ralscha.extdirectspring.bean.ExtDirectFormPostResult;
 import ch.rasc.eds.starter.Application;
 import ch.rasc.eds.starter.config.security.JpaUserDetails;
 import ch.rasc.eds.starter.config.security.RequireAdminAuthority;
@@ -62,7 +57,6 @@ public class SecurityService {
 		this.applicationEventPublisher = applicationEventPublisher;
 	}
 
-	@ExtDirectMethod
 	@Transactional
 	public UserDetailDto getAuthUser(
 			@AuthenticationPrincipal JpaUserDetails jpaUserDetails) {
@@ -81,10 +75,9 @@ public class SecurityService {
 		return null;
 	}
 
-	@ExtDirectMethod(ExtDirectMethodType.FORM_POST)
 	@PreAuthorize("hasAuthority('PRE_AUTH')")
 	@Transactional
-	public ExtDirectFormPostResult signin2fa(HttpServletRequest request,
+	public UserDetailDto signin2fa(HttpServletRequest request,
 			@AuthenticationPrincipal JpaUserDetails jpaUserDetails,
 			@RequestParam("code") int code) {
 
@@ -98,10 +91,8 @@ public class SecurityService {
 						jpaUserDetails, null, jpaUserDetails.getAuthorities());
 				SecurityContextHolder.getContext().setAuthentication(newAuth);
 
-				ExtDirectFormPostResult result = new ExtDirectFormPostResult();
-				result.addResultProperty(AUTH_USER, new UserDetailDto(jpaUserDetails,
-						user, CsrfController.getCsrfToken(request)));
-				return result;
+				return new UserDetailDto(jpaUserDetails, user,
+						CsrfController.getCsrfToken(request));
 			}
 
 			BadCredentialsException excp = new BadCredentialsException(
@@ -123,12 +114,11 @@ public class SecurityService {
 			}
 		}
 
-		return new ExtDirectFormPostResult(false);
+		return null;
 	}
 
-	@ExtDirectMethod(ExtDirectMethodType.FORM_POST)
 	@Transactional
-	public ExtDirectFormPostResult resetRequest(@RequestParam("email") String email) {
+	public void resetRequest(@RequestParam("email") String email) {
 		List<User> users = this.jpaQueryFactory
 				.selectFrom(QUser.user).where(QUser.user.loginName.eq(email)
 						.or(QUser.user.email.eq(email)).and(QUser.user.deleted.isFalse()))
@@ -149,13 +139,10 @@ public class SecurityService {
 					ZonedDateTime.now(ZoneOffset.UTC).plusHours(4));
 			user.setPasswordResetToken(token);
 		}
-
-		return new ExtDirectFormPostResult();
 	}
 
-	@ExtDirectMethod(ExtDirectMethodType.FORM_POST)
 	@Transactional
-	public ExtDirectFormPostResult reset(@RequestParam("newPassword") String newPassword,
+	public UserDetailDto reset(@RequestParam("newPassword") String newPassword,
 			@RequestParam("newPasswordRetype") String newPasswordRetype,
 			@RequestParam("token") String token) {
 
@@ -169,7 +156,7 @@ public class SecurityService {
 					.fetchFirst();
 			if (user != null && user.getPasswordResetTokenValidUntil() != null) {
 
-				ExtDirectFormPostResult result;
+				UserDetailDto result = null;
 
 				if (user.getPasswordResetTokenValidUntil()
 						.isAfter(ZonedDateTime.now(ZoneOffset.UTC))) {
@@ -181,13 +168,9 @@ public class SecurityService {
 							principal, null, principal.getAuthorities());
 					SecurityContextHolder.getContext().setAuthentication(authToken);
 
-					result = new ExtDirectFormPostResult();
-					result.addResultProperty(AUTH_USER,
-							new UserDetailDto(principal, user, null));
+					result = new UserDetailDto(principal, user, null);
 				}
-				else {
-					result = new ExtDirectFormPostResult(false);
-				}
+
 				user.setPasswordResetToken(null);
 				user.setPasswordResetTokenValidUntil(null);
 				this.jpaQueryFactory.getEntityManager().merge(user);
@@ -196,10 +179,9 @@ public class SecurityService {
 			}
 		}
 
-		return new ExtDirectFormPostResult(false);
+		return null;
 	}
 
-	@ExtDirectMethod
 	@RequireAdminAuthority
 	@Transactional(readOnly = true)
 	public UserDetailDto switchUser(Long userId) {
@@ -219,10 +201,9 @@ public class SecurityService {
 		return null;
 	}
 
-	@ExtDirectMethod(value = POLL, event = "heartbeat")
 	@RequireAnyAuthority
 	public void heartbeat() {
-		// nothing here
+		// session keep-alive
 	}
 
 }
