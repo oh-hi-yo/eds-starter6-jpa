@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "generate:types": "node node_modules/openapi-typescript/bin/cli.js http://localhost:8080/v3/api-docs -o src/lib/api/openapi.d.ts"
   },
   "dependencies": {
     "@ant-design/icons": "^6.2.5",
