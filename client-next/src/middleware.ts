@@ -5,7 +5,7 @@ const PUBLIC_PREFIXES = ["/login", "/reset-password"];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const hasSession = Boolean(req.cookies.get("eds_session")?.value);
+  const hasSession = Boolean(req.cookies.get("JSESSIONID")?.value);
   const isPublic = PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
 
   // 未登入訪問受保護路由 → 導向登入
