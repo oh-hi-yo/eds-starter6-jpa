@@ -148,16 +148,17 @@ error-pages.spec.ts— 2 tests  (404/403)
 | CSP nonce-based | `script-src 'nonce-xxx'` | 只加 `X-Content-Type-Options` + `Referrer-Policy` | middleware 有 comment 說明「留待 Phase 3 hardening，避免破壞 antd CSS-in-JS」 |
 | i18n 介面翻譯 | 語系切換影響 UI 字串 | 只儲存偏好，UI 不跟著換 | 明確 defer，等後續 Phase |
 
-### ❌ 未實作（設計有、程式碼沒有）
+### ✅ 技術債已全數補齊（2026-06-14 完成）
 
-| 設計項目 | design.md 所在 | 實際狀態 | 影響 |
-|---------|-------------|---------|------|
-| **MapStruct** Entity ↔ DTO mapper | §3.1 `mapper/` 資料夾 | 無任何 MapStruct，直接手動 mapping 在 Service 層 | 低：手動 mapping 正確即可，但 Entity 欄位多時易漏 |
-| **Bucket4j 限流** | §6 Rate Limiting（登入 5次/分/IP） | 無，pom.xml 沒有 bucket4j 依賴 | 中：缺少 DoS 防護，production 上線前需補 |
-| **openapi-typescript 自動生成型別** | §5.1 `types.ts` 從 OpenAPI spec 生成 | `types.ts` 是手寫，且有 comment 「Phase 3 由 openapi-typescript 取代」 | 中：前後端型別可能漂移，PR review 需人工比對 |
-| **docker-compose.yml** | §9 MySQL 8.4 + MailHog 本地環境 | 根目錄不存在 docker-compose.yml | 低：dev 用 H2，但 MySQL 本地測試無法一鍵啟動 |
-| **`/api/legacy/direct/*`** Ext Direct 橋接 | §4.3 新舊 API 並行 | 未實作，Ext Direct 原路徑 `/router` 未橋接 | 低：本次目標是全面取代，不需保留舊路由 |
-| **Spring Session JDBC/Redis** | §1.1 架構圖有 Session Store | 使用 Tomcat 預設 in-memory session | 中：重啟後 session 消失，多 instance 不共享 |
+| 設計項目 | 補齊 Commit | 詳情 |
+|---------|------------|------|
+| **docker-compose.yml** | `2d74ab9` | MySQL 8.4 + MailHog，一鍵啟動本地 dev 環境 |
+| **openapi-typescript 自動生成型別** | `38da9c9` | `pnpm generate:types` 從 `/v3/api-docs` 自動生成 `openapi.d.ts` |
+| **Spring Session JDBC** | `736ffe1` + `026d308` | Liquibase 建表 + `DefaultCookieSerializer` 維持 JSESSIONID cookie 名稱 |
+| **MapStruct 1.6.3** | `fbab1e7` | `UserMapper` 取代手動 `UserResponse::from`，`UserControllerTest` 以 `@MockBean` 隔離 |
+| **Bucket4j 8.10.1 限流** | `90dcf8f` | 5 req/min/IP，覆蓋 login / 2fa / password-reset，`RateLimitIT` TDD 驗證 429 |
+
+> **`/api/legacy/direct/*`** Ext Direct 橋接：本次全面取代策略，不需保留舊路由。維持 defer。
 
 ### 總結
 
@@ -165,12 +166,7 @@ error-pages.spec.ts— 2 tests  (404/403)
 |------|------|
 | 按計劃執行 | 9 項 |
 | 有意偏離（已記錄） | 3 項 |
-| 未實作（技術債） | 6 項 |
-
-**最優先補齊：**
-1. **openapi-typescript**（Phase 3 收尾就應該做，防型別漂移）
-2. **Bucket4j 限流**（production 安全要求）
-3. **Spring Session 持久化**（multi-instance / restart 穩定性）
+| 技術債（原未實作） | 6 項，其中 5 項已補齊 |
 
 ---
 
