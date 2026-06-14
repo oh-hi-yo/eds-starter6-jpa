@@ -1,8 +1,9 @@
 "use client";
+import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { App, Button, Card, Checkbox, Form, Input, Typography } from "antd";
-import { useLogin } from "@/hooks/use-auth";
+import { useLogin, useAuthUser } from "@/hooks/use-auth";
 import { type LoginInput, loginSchema } from "@/lib/schemas/auth.schema";
 
 const { Title, Text } = Typography;
@@ -10,6 +11,14 @@ const { Title, Text } = Typography;
 export default function LoginPage() {
   const router = useRouter();
   const { message } = App.useApp();
+  const { data: authUser } = useAuthUser();
+
+  // 已登入 → 跳回首頁（middleware 不再做這個，避免 stale JSESSIONID loop）
+  useEffect(() => {
+    if (authUser) {
+      router.replace(authUser.authorities.includes("ADMIN") ? "/users" : "/profile");
+    }
+  }, [authUser, router]);
   const login = useLogin();
 
   const onFinish = async (values: LoginInput) => {

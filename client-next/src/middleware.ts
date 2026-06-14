@@ -14,13 +14,10 @@ export function middleware(req: NextRequest) {
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
-
-  // 已登入又回到登入頁 → 導向首頁
-  if (hasSession && pathname === "/login") {
-    const url = req.nextUrl.clone();
-    url.pathname = "/users";
-    return NextResponse.redirect(url);
-  }
+  // Note: 不在 middleware 做「已登入→強制離開 /login」的 redirect。
+  // 原因：JSESSIONID 可能已過期，此時 getServerSession() 返回 null，
+  // layout.tsx redirect to /login，若 middleware 再 redirect 回去就是無限 loop。
+  // 「已登入訪問 /login 重導首頁」由登入頁 client-side 處理。
 
   const res = NextResponse.next();
   // 基本安全標頭（嚴格 CSP nonce 留待 Phase 3 hardening，避免破壞 antd CSS-in-JS）
