@@ -5,7 +5,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -16,6 +18,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.RememberMeServices;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.authentication.logout.HttpStatusReturningLogoutSuccessHandler;
 
 import ch.rasc.eds.starter.config.AppProperties;
@@ -52,6 +55,12 @@ class SecurityConfig {
 	}
 
 	@Bean
+	public AuthenticationManager authenticationManager(
+			AuthenticationConfiguration authConfig) throws Exception {
+		return authConfig.getAuthenticationManager();
+	}
+
+	@Bean
 	public WebSecurityCustomizer webSecurityCustomizer() {
 		return web -> {
 			if (this.environment.acceptsProfiles(Profiles.of("development"))) {
@@ -74,16 +83,15 @@ class SecurityConfig {
 		    .requestMatchers("/actuator/info", "/actuator/health").permitAll()
 		    .anyRequest().authenticated()
 		  )
+		  .addFilterBefore(new TwoFactorFilter(),
+		      UsernamePasswordAuthenticationFilter.class)
 		  .rememberMe(rm -> rm
 		    .rememberMeServices(this.rememberMeServices)
 		    .key(this.appProperties.getRemembermeCookieKey())
 		  )
-		  .formLogin(form -> form
-		    .successHandler(this.authenticationSuccessHandler)
-		    .failureHandler(new JsonAuthFailureHandler())
-		    .permitAll()
-		  )
+		  .formLogin(form -> form.disable())
 		  .logout(logout -> logout
+		    .logoutUrl("/api/v1/auth/logout")
 		    .logoutSuccessHandler(new HttpStatusReturningLogoutSuccessHandler())
 		    .deleteCookies("JSESSIONID")
 		    .permitAll()
