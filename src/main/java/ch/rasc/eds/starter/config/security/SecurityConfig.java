@@ -20,6 +20,8 @@ import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.RememberMeServices;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.authentication.logout.HttpStatusReturningLogoutSuccessHandler;
+import org.springframework.session.web.http.CookieSerializer;
+import org.springframework.session.web.http.DefaultCookieSerializer;
 
 import ch.rasc.eds.starter.config.AppProperties;
 
@@ -58,6 +60,15 @@ class SecurityConfig {
 	public AuthenticationManager authenticationManager(
 			AuthenticationConfiguration authConfig) throws Exception {
 		return authConfig.getAuthenticationManager();
+	}
+
+	@Bean
+	public CookieSerializer cookieSerializer() {
+		DefaultCookieSerializer serializer = new DefaultCookieSerializer();
+		serializer.setCookieName("JSESSIONID");
+		serializer.setUseHttpOnlyCookie(true);
+		serializer.setSameSite("Lax");
+		return serializer;
 	}
 
 	@Bean
