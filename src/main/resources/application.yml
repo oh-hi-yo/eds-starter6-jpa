@@ -12,6 +12,7 @@ app:
   default-email-sender: no-reply@starter.com
   login-lock-attempts: 10
   login-lock-minutes: 30
+  rate-limit-capacity: 5
 
 spring:
   jackson:
