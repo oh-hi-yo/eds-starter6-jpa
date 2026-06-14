@@ -26,6 +26,7 @@ import ch.rasc.eds.starter.service.UserService;
 import ch.rasc.eds.starter.util.ServiceResult;
 import ch.rasc.eds.starter.web.dto.PageResult;
 import ch.rasc.eds.starter.web.dto.UserResponse;
+import ch.rasc.eds.starter.web.mapper.UserMapper;
 
 @RestController
 @RequestMapping("/api/v1/users")
@@ -34,8 +35,11 @@ public class UserController {
 
 	private final UserService userService;
 
-	public UserController(UserService userService) {
+	private final UserMapper userMapper;
+
+	public UserController(UserService userService, UserMapper userMapper) {
 		this.userService = userService;
+		this.userMapper = userMapper;
 	}
 
 	@GetMapping
@@ -45,7 +49,7 @@ public class UserController {
 			@RequestParam(required = false) String q) {
 
 		Page<User> result = this.userService.read(page, size, q);
-		Page<UserResponse> mapped = result.map(UserResponse::from);
+		Page<UserResponse> mapped = result.map(this.userMapper::toResponse);
 		return PageResult.from(mapped);
 	}
 
@@ -53,7 +57,7 @@ public class UserController {
 	public ResponseEntity<?> createOrUpdate(@RequestBody @Valid User user, Locale locale) {
 		ServiceResult<User> result = this.userService.update(user, locale);
 		if (result.isSuccess()) {
-			return ResponseEntity.ok(UserResponse.from(result.data()));
+			return ResponseEntity.ok(this.userMapper.toResponse(result.data()));
 		}
 		return ResponseEntity.unprocessableEntity().body(result.violations());
 	}

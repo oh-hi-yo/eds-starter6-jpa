@@ -22,6 +22,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <java.version>17</java.version>
     <querydsl.version>5.1.0</querydsl.version>
+    <mapstruct.version>1.6.3</mapstruct.version>
     <maven.build.timestamp.format>yyyy-MM-dd'T'HH-mm-ssZ</maven.build.timestamp.format>
     <build.timestamp>${maven.build.timestamp}</build.timestamp>
   </properties>
@@ -149,6 +150,13 @@
       <optional>true</optional>
     </dependency>
 
+    <!-- MapStruct -->
+    <dependency>
+      <groupId>org.mapstruct</groupId>
+      <artifactId>mapstruct</artifactId>
+      <version>${mapstruct.version}</version>
+    </dependency>
+
     <!-- OpenAPI 3 / Swagger UI -->
     <dependency>
       <groupId>org.springdoc</groupId>
@@ -243,6 +251,11 @@
               <groupId>jakarta.persistence</groupId>
               <artifactId>jakarta.persistence-api</artifactId>
               <version>3.1.0</version>
+            </path>
+            <path>
+              <groupId>org.mapstruct</groupId>
+              <artifactId>mapstruct-processor</artifactId>
+              <version>${mapstruct.version}</version>
             </path>
           </annotationProcessorPaths>
         </configuration>

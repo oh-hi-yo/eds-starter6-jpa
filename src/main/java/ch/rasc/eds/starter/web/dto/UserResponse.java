@@ -21,6 +21,8 @@ public record UserResponse(
 		Integer failedLogins,
 		boolean twoFactorAuth) {
 
+	/** @deprecated Use {@link ch.rasc.eds.starter.web.mapper.UserMapper} instead. */
+	@Deprecated
 	public static UserResponse from(User user) {
 		return new UserResponse(user.getId(), user.getLoginName(), user.getFirstName(),
 				user.getLastName(), user.getEmail(), user.getLocale(), user.isEnabled(),

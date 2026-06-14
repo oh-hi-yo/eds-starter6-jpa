@@ -11,7 +11,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.util.Collections;
 import java.util.List;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -24,6 +26,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import ch.rasc.eds.starter.entity.User;
 import ch.rasc.eds.starter.service.UserService;
+import ch.rasc.eds.starter.web.dto.UserResponse;
+import ch.rasc.eds.starter.web.mapper.UserMapper;
 
 @WebMvcTest(UserController.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -35,6 +39,16 @@ class UserControllerTest {
 
 	@MockBean
 	UserService userService;
+
+	@MockBean
+	UserMapper userMapper;
+
+	@BeforeEach
+	@SuppressWarnings("deprecation")
+	void setupMapper() {
+		org.mockito.Mockito.when(this.userMapper.toResponse(ArgumentMatchers.any(User.class)))
+				.thenAnswer(inv -> UserResponse.from(inv.getArgument(0)));
+	}
 
 	@Test
 	@WithMockUser(roles = "ADMIN")
