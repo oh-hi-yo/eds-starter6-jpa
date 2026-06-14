@@ -64,9 +64,15 @@ spring:
     hibernate:
       ddl-auto: validate
 
+  session:
+    store-type: jdbc
+    jdbc:
+      initialize-schema: never
+    timeout: 480m
+
   main:
-    banner-mode: log       
-      
+    banner-mode: log
+
 
   liquibase:
     change-log: classpath:/db/changelog.xml

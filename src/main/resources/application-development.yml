@@ -1,10 +1,15 @@
 spring:
   resources:
     cache:
-      period: 0    
+      period: 0
     static-locations: file:./client/,file:./client/ext/classic/locale/overrides/de/
   jpa:
     show-sql: true
+  session:
+    store-type: jdbc
+    jdbc:
+      initialize-schema: never
+    timeout: 480m
 
 server:
   port: 8080
