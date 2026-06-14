@@ -981,99 +981,292 @@ Layer 3 — REST Assured E2E（src/test/java/.../e2e/）
 #### Task 3.1 — 前後端完整整合
 
 **Assignee：** Architecture (Team Lead) + Frontend Dev + Backend Dev  
-**Skills：** `vercel-agent-skills:react-best-practices`、`ecc:springboot-patterns`、`superpowers:systematic-debugging`
+**Skills：** `vercel-agent-skills:react-best-practices`、`ecc:java-reviewer`、`superpowers:systematic-debugging`
 
-**目標：** 移除所有 mock，前端完全使用真實 Spring Boot REST API，確認所有流程端到端通暢。
-
-**實作步驟：**
-
-1. 確認 `next.config.ts` rewrite 正確代理所有 `/api/v1/*` → `http://localhost:8080`
-
-2. CSRF token 整合：
-   - 前端在 layout.tsx 載入時讀取 `XSRF-TOKEN` cookie
-   - 所有 mutation（Server Action / Route Handler）附上 `X-XSRF-TOKEN` header
-
-3. 逐一測試：登入 → 2FA → 導覽 → User CRUD → Profile → 登出
-
-4. 修正整合中發現的問題（CORS、cookie domain、redirect 等）
-
-5. 用真實 MySQL：`docker compose up` + 確認 Liquibase 初始資料正確
-
-**驗收標準：**
-
-| 驗證 | 條件 |
-|------|------|
-| 手動驗證 | 完整流程：登入 → 瀏覽 → CRUD → 登出，全部使用真實後端 |
-| MCP network requests | 所有 API 呼叫 HTTP 200/201/204 |
-| MCP console | 0 JavaScript errors |
+**目標：** 移除所有 mock，前端完全使用真實 Spring Boot REST API。每個 sub-phase 各自 commit，Playwright E2E 全綠後才算完成。
 
 ---
 
-#### Task 3.2 — Playwright E2E Test Suite（8 個模組完整覆蓋）
+**整合衝擊分析（設計基礎）：**
 
-**Assignee：** QA  
-**Skills：** `ecc:e2e-testing`、`ecc:browser-qa`、`superpowers:test-driven-development`、`superpowers:systematic-debugging`
+Phase 1 mock 設 `eds_session` cookie；Spring Boot 設 `JSESSIONID`。這導致三個地方必須同步改：
 
-**目標：** 完整 Playwright 測試套件，覆蓋所有 8 個功能模組，確認 Revamped 應用與 Legacy 行為一致。
+| 檔案 | 現狀（mock） | 改為（real） |
+|------|------------|------------|
+| `client-next/src/middleware.ts` | 檢查 `eds_session` | 檢查 `JSESSIONID` |
+| `client-next/src/lib/auth/session.ts` | 讀 `eds_session` → mock 查 user | `GET /api/v1/auth/me`（轉發 JSESSIONID） |
+| `client-next/src/app/(admin)/layout.tsx` | `getNavigation(mock)` | `GET /api/v1/navigation` |
 
-**測試檔案結構：**
+Mock Route Handlers（`src/app/api/v1/*`）**保留不刪**——rewrite 啟用後自動被繞過，不影響功能。
+
+---
+
+**架構流程：**
 
 ```
-e2e/
+瀏覽器 → Next.js :3000
+            │ middleware 檢查 JSESSIONID
+            ↓
+       /api/v1/* rewrite
+            ↓
+     Spring Boot :8080 (e2e profile, H2 in-memory)
+            ↓
+     Playwright 前置：POST /api/v1/test/reset（auto fixture）
+```
+
+---
+
+**Sub-phase 3.1.1 — Spring Boot e2e profile + TestResetController**
+
+新增 `src/main/resources/application-e2e.yml`（H2 in-memory，無 Docker）：
+```yaml
+spring:
+  datasource:
+    url: jdbc:h2:mem:e2edb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: none
+  liquibase:
+    enabled: true
+  mail:
+    host: localhost
+    port: 3025
+app:
+  login-lock-attempts: 3
+  login-lock-minutes: 30
+management:
+  health:
+    mail:
+      enabled: false
+```
+
+新增 `TestResetController.java`（`@Profile("e2e")` 確保只在 e2e profile 啟用）：
+```java
+@Profile("e2e")
+@RestController
+class TestResetController {
+  @Autowired JdbcTemplate jdbcTemplate;
+
+  @PostMapping("/api/v1/test/reset")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  void reset() {
+    jdbcTemplate.update(
+      "UPDATE app_user SET failed_logins = NULL, locked_out_until = NULL, " +
+      "totp_secret = NULL WHERE login_name IN ('admin','user')");
+    jdbcTemplate.update(
+      "DELETE FROM app_user WHERE login_name NOT IN ('admin','user')");
+    jdbcTemplate.update("DELETE FROM persistent_login");
+  }
+}
+```
+
+驗收：`./mvnw spring-boot:run -Dspring.profiles.active=e2e` 啟動，`curl -X POST localhost:8080/api/v1/test/reset` → 204。
+
+---
+
+**Sub-phase 3.1.2 — Next.js rewrite 啟用**
+
+修改 `client-next/next.config.ts`：
+```ts
+async rewrites() {
+  return [
+    {
+      source: "/api/v1/:path*",
+      destination: `${process.env.BACKEND_URL ?? "http://localhost:8080"}/api/v1/:path*`,
+    },
+  ];
+},
+```
+
+驗收：Spring Boot 在 :8080 執行中，`curl http://localhost:3000/api/v1/auth/me` → 401（實際打到 SB）。
+
+---
+
+**Sub-phase 3.1.3 — cookie + SSR session 切換**
+
+1. `client-next/src/middleware.ts`：
+```ts
+// 改為
+const hasSession = Boolean(req.cookies.get("JSESSIONID")?.value);
+```
+
+2. `client-next/src/lib/auth/session.ts`（移除 mock 依賴，改 fetch 真實 API）：
+```ts
+export async function getServerSession(): Promise<AuthUser | null> {
+  const store = await cookies();
+  const jsessionid = store.get("JSESSIONID")?.value;
+  if (!jsessionid) return null;
+  try {
+    const res = await fetch(
+      `${process.env.BACKEND_URL ?? "http://localhost:8080"}/api/v1/auth/me`,
+      { headers: { Cookie: `JSESSIONID=${jsessionid}` }, cache: "no-store" }
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as AuthUser;
+  } catch { return null; }
+}
+```
+
+3. `client-next/src/app/(admin)/layout.tsx`：
+```ts
+// 改為 fetch 真實 navigation API
+const navRes = await fetch(
+  `${process.env.BACKEND_URL ?? "http://localhost:8080"}/api/v1/navigation`,
+  { headers: { Cookie: `JSESSIONID=${jsessionid}` }, cache: "no-store" }
+);
+const nav = await navRes.json();
+```
+
+驗收：手動登入 → 進 dashboard → 瀏覽器 Network 顯示所有 API 打到 :8080。
+
+---
+
+**Sub-phase 3.1.4 — Playwright webServer + db.fixture**
+
+修改 `client-next/playwright.config.ts`，加入 Spring Boot webServer：
+```ts
+webServer: [
+  {
+    command: "pnpm dev",
+    url: "http://localhost:3000",
+    reuseExistingServer: true,
+    timeout: 60_000,
+  },
+  {
+    command: "cd .. && ./mvnw spring-boot:run -Dspring.profiles.active=e2e -q",
+    url: "http://localhost:8080/actuator/health",
+    reuseExistingServer: true,
+    timeout: 120_000,
+  },
+],
+```
+
+新增 `client-next/e2e/fixtures/db.fixture.ts`：
+```ts
+import { test as base } from "@playwright/test";
+
+export const test = base.extend<{ resetDb: void }>({
+  resetDb: [
+    async ({ request }, use) => {
+      await request.post("http://localhost:8080/api/v1/test/reset");
+      await use();
+    },
+    { auto: true },  // 每個 test 自動執行，無需手動聲明
+  ],
+});
+export { expect } from "@playwright/test";
+```
+
+---
+
+**Sub-phase 3.1.5 — 所有 spec 切換至 db.fixture，pnpm test:e2e 全綠**
+
+所有 `e2e/*.spec.ts` 改 import：
+```ts
+// 從
+import { expect, test } from "@playwright/test";
+// 改為
+import { expect, test } from "./fixtures/db.fixture";
+```
+
+驗收：`pnpm test:e2e` 全部通過，`playwright-report/index.html` 無 FAILED。
+
+---
+
+**整合指令速查：**
+
+```bash
+# 後端（e2e profile，H2）
+./mvnw spring-boot:run -Dspring.profiles.active=e2e
+
+# 前端開發
+cd client-next && pnpm dev
+
+# E2E 測試（自動啟動兩個 server）
+cd client-next && pnpm test:e2e
+
+# E2E UI mode（可視化 debug）
+cd client-next && pnpm test:e2e --ui
+```
+
+**驗收標準（Task 3.1 完成條件）：**
+
+| 驗證 | 指令 / 條件 |
+|------|-----------|
+| Sub-phase 3.1.1 | `curl -X POST localhost:8080/api/v1/test/reset` → 204 |
+| Sub-phase 3.1.2 | `curl localhost:3000/api/v1/auth/me` → 401（非 mock） |
+| Sub-phase 3.1.3 | 手動登入後 RSC layout 正確顯示真實 user / nav |
+| Sub-phase 3.1.4 | `pnpm test:e2e auth.spec.ts` 通過 |
+| Sub-phase 3.1.5 | `pnpm test:e2e` 全綠，HTML 報告無 FAILED |
+
+---
+
+#### Task 3.2 — Playwright E2E Test Suite（完整場景覆蓋）
+
+**Assignee：** QA  
+**Skills：** `ecc:e2e-runner`、`superpowers:systematic-debugging`
+
+**目標：** 確認 Playwright 打真實 Spring Boot 後端的情況下，所有功能模組行為正確。
+
+**測試架構：**
+
+```
+client-next/e2e/
   fixtures/
-    auth.fixture.ts        # 自動登入 fixture
-    db.fixture.ts          # 測試資料重置
+    db.fixture.ts          # auto reset DB（每個 test 前）
   auth.spec.ts
   users.spec.ts
   profile.spec.ts
   navigation.spec.ts
   error-pages.spec.ts
+  helpers.ts               # login(), fillOtp(), expectOnUsers() 等
 ```
 
 **`e2e/auth.spec.ts` 測試案例：**
-- 正確帳密 → 跳轉 `/users`
-- 錯誤密碼 → antd 錯誤訊息
-- 錯誤 5 次 → 警示訊息（5次後鎖定）
-- 2FA 用戶 → 跳轉 `/login/2fa`，正確 OTP → 進入系統
-- 記住我 → 關閉視窗重開 → 自動登入（cookie 存在）
-- 登出 → session 清除 → 跳轉 `/login`
 
-**`e2e/users.spec.ts` 測試案例：**
-- 載入 Grid，顯示 20 筆分頁資料
-- 搜尋關鍵字 → Grid 過濾
-- 點擊下一頁 → 正確資料
-- 新增使用者（完整表單）→ Grid 出現新資料
-- 編輯使用者（修改 email）→ Grid 反映更新
-- 刪除使用者 → Grid 移除
-- 解鎖被鎖定帳號 → 成功通知
-- 停用指定用戶 2FA（ADMIN）→ 成功
+| # | 場景 | 觸發後端 |
+|---|------|---------|
+| 1 | 正確帳密 → 進入 `/users` | POST /api/v1/auth/login → 200 |
+| 2 | 錯誤密碼 → antd 錯誤訊息 | POST /api/v1/auth/login → 401 |
+| 3 | 連續 3 次錯誤 → 鎖定提示（4th 返 423） | POST /api/v1/auth/login → 423 |
+| 4 | 登出 → 回 `/login`，session 失效 | POST /api/v1/auth/logout → 200 |
+| 5 | 未登入訪問 `/users` → redirect `/login` | middleware 攔截（JSESSIONID absent） |
+
+**`e2e/users.spec.ts` 測試案例（需 ADMIN 登入）：**
+
+| # | 場景 | 觸發後端 |
+|---|------|---------|
+| 1 | Grid 載入，顯示資料 | GET /api/v1/users |
+| 2 | 新增使用者 → Grid 出現 | POST /api/v1/users → 201 |
+| 3 | 編輯使用者 → 更新反映 | PUT /api/v1/users/{id} → 200 |
+| 4 | 刪除使用者 → 消失 | DELETE /api/v1/users/{id} → 204 |
+| 5 | USER 角色訪問 → 403 頁面 | GET /api/v1/users → 403 |
 
 **`e2e/profile.spec.ts` 測試案例：**
-- 更新語系設定 → 儲存成功 toast
-- Enable 2FA → QRCode 顯示 → OTP 驗證 → 顯示已啟用
-- Disable 2FA → OTP 確認 → 顯示已停用
-- 裝置清單顯示 → 撤銷裝置 → 清單更新
+
+| # | 場景 | 觸發後端 |
+|---|------|---------|
+| 1 | 更新語系設定 → 儲存成功 toast | PUT /api/v1/me/settings → 200 |
+| 2 | 裝置清單顯示 → 撤銷裝置 | GET/DELETE /api/v1/me/devices |
 
 **`e2e/navigation.spec.ts` 測試案例：**
-- ADMIN 登入 → 見「使用者管理」「個人設定」「系統管理」
-- USER 登入 → 不見「使用者管理」
+- ADMIN 登入 → sidebar 含「使用者管理」項目
+- USER 登入 → sidebar 不含「使用者管理」項目
 
 **`e2e/error-pages.spec.ts` 測試案例：**
 - 訪問不存在路由 → 404 Result
 - 無權限路由 → 403 Result
 
-**MCP 工具使用：**
-- `take_screenshot`：每個關鍵狀態截圖，存入 `e2e/screenshots/`
-- `get_console_message`：確認各頁面無 JS errors
-- `list_network_requests`：確認 API 呼叫路徑正確（無 401/500）
+> **Note（Phase 3.2 不含）：** 2FA TOTP 自動化（需真實 authenticator seed）、Password Reset email flow（需 MailHog）留待 Task 3.3 或 Phase 4。
 
 **驗收標準：**
 
 | 驗證 | 指令 | 通過條件 |
 |------|------|---------|
-| E2E 全套 | `pnpm e2e --reporter=html` | 所有 30+ 測試案例通過 |
-| HTML 報告 | 開啟 `playwright-report/index.html` | 無 FAILED / FLAKY |
-| MCP 截圖 | 目視確認 `e2e/screenshots/` | 無視覺破版 |
+| E2E 全套 | `cd client-next && pnpm test:e2e` | 所有 specs 通過 |
+| HTML 報告 | `playwright-report/index.html` | 無 FAILED / FLAKY |
+| Network 確認 | Playwright `request` log | 所有 API 呼叫返回 200/201/204（無 mock） |
 
 ---
 
@@ -1141,6 +1334,94 @@ e2e/
 | 7 | MCP 瀏覽器驗證 | 0 console errors，所有 API 返回正確狀態碼 |
 
 **負責人：QA（執行）+ Architecture (Team Lead)（最終簽核）**
+
+---
+
+## Task 4：Local 開發環境快速架設
+
+> **目標：** 讓開發者在本機啟動完整前後端，透過瀏覽器實際操作 UI。
+
+---
+
+### 前置需求
+
+| 工具 | 版本 | 確認指令 |
+|------|------|---------|
+| Java | 17+ | `java -version` |
+| Maven Wrapper | 內建 | `./mvnw -version` |
+| Node.js | 20+ | `node -v` |
+| pnpm | 9+ | `pnpm -v`（沒有就 `npm i -g pnpm`） |
+
+---
+
+### 模式 A：Mock 模式（Phase 1，只需 Next.js，30 秒啟動）
+
+> 前端使用內建 mock API，不需 Spring Boot。適合純 UI 開發與驗證。
+
+```bash
+cd client-next
+pnpm install        # 第一次需要
+pnpm dev
+```
+
+開啟 `http://localhost:3000`
+
+---
+
+### 模式 B：完整整合模式（Phase 3，前後端都要跑）
+
+> 前端 rewrite 打真實 Spring Boot，適合 E2E 驗收。需完成 Phase 3 Task 3.1 整合後才有效。
+
+**Terminal 1 — 後端**
+```bash
+# 開發環境（port 8080，H2 DB，熱重載）
+./mvnw spring-boot:run -Dspring.profiles.active=development
+```
+
+**Terminal 2 — 前端**
+```bash
+cd client-next
+pnpm dev
+```
+
+開啟 `http://localhost:3000`
+
+---
+
+### 預設帳號
+
+| 帳號 | 密碼 | 角色 | 說明 |
+|------|------|------|------|
+| `admin` | `admin` | ADMIN | 可存取所有功能，含使用者管理 |
+| `user` | `user` | USER | 只能存取個人設定 |
+
+---
+
+### 關鍵 URL
+
+| URL | 說明 |
+|-----|------|
+| `http://localhost:3000` | Next.js 前端 UI |
+| `http://localhost:8080/swagger-ui.html` | Spring Boot REST API 文件 |
+| `http://localhost:8080/actuator/health` | 後端健康狀態 |
+
+---
+
+### 常見問題
+
+**Port 8080 被佔用**
+```bash
+lsof -i :8080 | grep LISTEN
+kill -9 <PID>
+```
+
+**pnpm install 很慢**
+```bash
+pnpm config set registry https://registry.npmmirror.com
+```
+
+**後端 Port 80 Permission denied**  
+確認使用 `-Dspring.profiles.active=development`（development profile 改為 port 8080）。
 
 ---
 
